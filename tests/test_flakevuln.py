@@ -887,7 +887,7 @@ def test_report_writes_step_summary_without_outdir(monkeypatch, tmp_path):
     flakevuln_main.main()
 
     summary_text = summary_file.read_text(encoding="utf-8")
-    assert "flakevuln scan summary" in summary_text
+    assert "Flakevuln Scan Summary" in summary_text
     assert "## Detailed Vulnerability Report" in summary_text
     # No --outdir: no markdown report was written.
     assert not (tmp_path / "README.md").exists()
@@ -1126,7 +1126,7 @@ def test_report_runs_nixprs_only_in_report_phase(monkeypatch, tmp_path):
 
     assert seen["token"] == "secret-token"
     summary_text = (tmp_path / "summary.md").read_text(encoding="utf-8")
-    assert "PR enrichment: complete" in summary_text
+    assert "nixpkgs PR link lookup: complete for actionable findings" in summary_text
     assert findings.read_text(encoding="utf-8") == original_findings
     persisted = json.loads(next_baseline.read_text(encoding="utf-8"))
     persisted_links = {
@@ -1185,7 +1185,7 @@ def test_report_detailed_summary_includes_report_layout(tmp_path, monkeypatch):
     flakevuln_main._cmd_report(args)
 
     summary_text = (tmp_path / "summary.md").read_text(encoding="utf-8")
-    assert "flakevuln scan summary" in summary_text
+    assert "Flakevuln Scan Summary" in summary_text
     assert "Skipped nixpkgs unstable comparison" in summary_text
     assert "## Detailed Vulnerability Report" in summary_text
     assert "### Targets" not in summary_text
@@ -1251,7 +1251,7 @@ def test_report_summary_works_without_extra_notes(tmp_path, monkeypatch):
     flakevuln_main._cmd_report(args)
 
     summary_text = (tmp_path / "summary.md").read_text(encoding="utf-8")
-    assert "flakevuln scan summary" in summary_text
+    assert "Flakevuln Scan Summary" in summary_text
     assert "## Detailed Vulnerability Report" in summary_text
     assert "### Targets" not in summary_text
     assert "| target | status | current |" not in summary_text

@@ -2626,11 +2626,18 @@ def _run_report(  # noqa: PLR0913
         reporter.apply_nixprs(actionable)
         # Keep `report --findings=...` read-only; owned callers can persist the
         # enriched reporter state separately for future baselines or outputs.
-        notes.append("PR enrichment: complete" if ok else "PR enrichment: partial")
+        notes.append(
+            (
+                "nixpkgs PR link lookup: complete for actionable findings"
+                if ok
+                else "nixpkgs PR link lookup: partial; some actionable findings "
+                "could not be enriched with candidate PR links"
+            )
+        )
     notes.extend(
         _safe_markdown_text(note) for note in comparison_notes if str(note).strip()
     )
-    lines = ["# flakevuln scan summary", ""]
+    lines = ["# Flakevuln Scan Summary", ""]
     if notes:
         lines.append("\n".join(notes))
         lines.append("")
