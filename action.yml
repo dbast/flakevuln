@@ -1,0 +1,262 @@
+# Composite action for scanning a checked-out flake in two phases:
+# untrusted `scan`, then trusted `report`.
+
+name: flakevuln
+description: Flake-agnostic vulnerability scanning via the three-way re-lock diff
+branding: { icon: shield, color: purple }   # required only for Marketplace listing
+
+inputs:
+  flakeref:        { default: '.' }       # local path in the checked-out workspace: repo root or subdir
+  targets:         { required: true }     # newline list
+  input-name:      { default: nixpkgs }
+  unstable-ref:    { default: '' }        # empty skips the third scan
+  whitelist:       { default: '' }
+  nixprs:          { default: 'false' }   # opt-in PR enrichment; best-effort only
+  token:           { default: '' }        # optional auth for --nixprs; empty falls back to github.token in the trusted report step
+  cachix-caches:   { default: '' }        # space-separated cachix cache names (read-only substituters)
+
+runs:
+  using: composite
+  steps:
+    # Pin the Nix CLI version used by the action.
+    - name: Install Nix
+      uses: cachix/install-nix-action@9280e7aca88deada44c930f1e2c78e21c3ae3edd # v31
+      with:
+        install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          accept-flake-config = true
+
+    # Configure optional Cachix substituters using the action's locked nixpkgs.
+    - name: Configure cachix caches
+      if: ${{ inputs.cachix-caches != '' }}
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CACHIX_CACHES: ${{ inputs.cachix-caches }}
+      run: |
+        set -euo pipefail
+        for cache in $CACHIX_CACHES; do
+          nix run --inputs-from "$ACTION_PATH" nixpkgs#cachix -- use "$cache" \
+            || echo "cachix use $cache failed (non-fatal)"
+        done
+
+    # Build the engine once and reuse the same store path for both phases.
+    - name: Build flakevuln
+      id: build
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BIN_LINK: ${{ runner.temp }}/flakevuln-bin
+      run: |
+        set -euo pipefail
+        echo "Starting flakevuln self-build..." >&2
+        if ! nix build "${ACTION_PATH}#flakevuln" --out-link "$BIN_LINK" --quiet; then
+          echo "flakevuln self-build failed; retrying with full build logs" >&2
+          nix build "${ACTION_PATH}#flakevuln" --out-link "$BIN_LINK" --print-build-logs
+        fi
+        echo "flakevuln self-build completed" >&2
+        echo "bin=${BIN_LINK}/bin/flakevuln" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve flakevuln baseline scope
+      id: baseline-scope
+      shell: bash
+      env:
+        FLAKEVULN_BIN: ${{ steps.build.outputs.bin }}
+        FLAKEREF: ${{ inputs.flakeref }}
+        INPUT_NAME: ${{ inputs.input-name }}
+        TARGETS: ${{ inputs.targets }}
+      run: |
+        set -euo pipefail
+        args=( scope --flakeref="$FLAKEREF" --input-name="$INPUT_NAME" )
+        while IFS= read -r t; do
+          if [ -n "$t" ]; then args+=( "--target=$t" ); fi
+        done <<< "$TARGETS"
+        baseline_path="$("$FLAKEVULN_BIN" "${args[@]}")"
+        scope_hash="$(basename "$(dirname "$baseline_path")")"
+        {
+          echo "baseline_path=$baseline_path"
+          echo "scope_hash=$scope_hash"
+        } >> "$GITHUB_OUTPUT"
+
+    # Use rolling cache keys so a successful run can publish fresher tool data
+    # for the next one. If the action runs multiple times in the same job, skip
+    # restore once the cache files already exist locally so we do not clobber
+    # newer in-job state with an older archive from a previous run.
+    - name: Prepare cache metadata
+      id: cache-meta
+      shell: bash
+      run: |
+        set -euo pipefail
+        nonce="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+        suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${nonce}"
+        echo "grype_prefix=flakevuln-grype-db-v1-${RUNNER_OS}-" >> "$GITHUB_OUTPUT"
+        echo "grype_key=flakevuln-grype-db-v1-${RUNNER_OS}-${suffix}" >> "$GITHUB_OUTPUT"
+        echo "vulnix_prefix=flakevuln-vulnix-db-v1-${RUNNER_OS}-" >> "$GITHUB_OUTPUT"
+        echo "vulnix_key=flakevuln-vulnix-db-v1-${RUNNER_OS}-${suffix}" >> "$GITHUB_OUTPUT"
+        echo "sbomnix_prefix=flakevuln-sbomnix-http-v1-${RUNNER_OS}-" >> "$GITHUB_OUTPUT"
+        echo "sbomnix_key=flakevuln-sbomnix-http-v1-${RUNNER_OS}-${suffix}" >> "$GITHUB_OUTPUT"
+        echo "baseline_prefix=flakevuln-last-run-v1-${RUNNER_OS}-${{ steps.baseline-scope.outputs.scope_hash }}-" >> "$GITHUB_OUTPUT"
+        echo "baseline_key=flakevuln-last-run-v1-${RUNNER_OS}-${{ steps.baseline-scope.outputs.scope_hash }}-${suffix}" >> "$GITHUB_OUTPUT"
+
+    - name: Probe local tool caches for restore
+      id: cache-restore-probe
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BASELINE_PATH: ${{ steps.baseline-scope.outputs.baseline_path }}
+      run: |
+        set -euo pipefail
+        "$ACTION_PATH/scripts/probe-cache-state.sh" "$GITHUB_OUTPUT" "$BASELINE_PATH"
+
+    # Restore grype's downloaded vulnerability database across runs.
+    # Honor XDG_CACHE_HOME when the caller sets it.
+    - name: Restore grype DB
+      if: ${{ steps.cache-restore-probe.outputs.grype_present != 'true' }}
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ env.XDG_CACHE_HOME != '' && format('{0}/grype/db', env.XDG_CACHE_HOME) || '~/.cache/grype/db' }}
+        key: ${{ steps.cache-meta.outputs.grype_key }}
+        restore-keys: |
+          ${{ steps.cache-meta.outputs.grype_prefix }}
+
+    # Restore vulnix's durable local NVD data files across runs.
+    - name: Restore vulnix DB
+      if: ${{ steps.cache-restore-probe.outputs.vulnix_present != 'true' }}
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ~/.cache/vulnix/Data.fs
+          ~/.cache/vulnix/Data.fs.index
+        key: ${{ steps.cache-meta.outputs.vulnix_key }}
+        restore-keys: |
+          ${{ steps.cache-meta.outputs.vulnix_prefix }}
+
+    # Restore sbomnix's shared requests-cache database across runs. This
+    # covers OSV, repology, and optional nixprs lookups without persisting the
+    # unrelated dataframe/meta lock files that live under the same cache root.
+    # Honor XDG_CACHE_HOME when the caller sets it.
+    - name: Restore sbomnix HTTP responses
+      if: ${{ steps.cache-restore-probe.outputs.sbomnix_present != 'true' }}
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ env.XDG_CACHE_HOME != '' && format('{0}/sbomnix/http_cache.sqlite*', env.XDG_CACHE_HOME) || '~/.cache/sbomnix/http_cache.sqlite*' }}
+        key: ${{ steps.cache-meta.outputs.sbomnix_key }}
+        restore-keys: |
+          ${{ steps.cache-meta.outputs.sbomnix_prefix }}
+
+    - name: Restore flakevuln previous-run baseline
+      if: ${{ steps.cache-restore-probe.outputs.baseline_present != 'true' }}
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ steps.baseline-scope.outputs.baseline_path }}
+        key: ${{ steps.cache-meta.outputs.baseline_key }}
+        restore-keys: |
+          ${{ steps.cache-meta.outputs.baseline_prefix }}
+
+    # Best-effort grype DB warm-up using the action's locked nixpkgs.
+    - name: Grype DB update
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: nix run --inputs-from "$ACTION_PATH" nixpkgs#grype -- db update || echo "grype db pre-warm failed (non-fatal); the scan fetches the DB"
+
+    # Phase 1: scan without GH_TOKEN and write findings.
+    - name: Scan (untrusted)
+      id: scan
+      shell: bash
+      env:
+        FLAKEVULN_BIN: ${{ steps.build.outputs.bin }}
+        FLAKEREF: ${{ inputs.flakeref }}
+        INPUT_NAME: ${{ inputs.input-name }}
+        UNSTABLE_REF: ${{ inputs.unstable-ref }}
+        WHITELIST: ${{ inputs.whitelist }}
+        TARGETS: ${{ inputs.targets }}
+        OUTDIR: ${{ runner.temp }}/flakevuln
+      run: |
+        set -euo pipefail
+        # Clear prior output for this invocation.
+        rm -rf "$OUTDIR"
+        targets=()
+        while IFS= read -r t; do
+          if [ -n "$t" ]; then targets+=( "--target=$t" ); fi
+        done <<< "$TARGETS"
+        wl=()
+        if [ -n "$WHITELIST" ]; then wl+=( "--whitelist=$WHITELIST" ); fi
+        "$FLAKEVULN_BIN" scan \
+          --flakeref="$FLAKEREF" \
+          --input-name="$INPUT_NAME" \
+          --unstable-ref="$UNSTABLE_REF" \
+          "${wl[@]}" "${targets[@]}" \
+          --findings="$OUTDIR/findings.json"
+        {
+          echo "findings=$OUTDIR/findings.json"
+        } >> "$GITHUB_OUTPUT"
+      # NOTE: no `env: GH_TOKEN` here.
+
+    # Phase 2: render the Step Summary from the materialized findings.
+    - name: Report (trusted)
+      shell: bash
+      env:
+        FLAKEVULN_BIN: ${{ steps.build.outputs.bin }}
+        FINDINGS: ${{ steps.scan.outputs.findings }}
+        NIXPRS: ${{ inputs.nixprs }}
+        BASELINE_FINDINGS: ${{ steps.baseline-scope.outputs.baseline_path }}
+        # Composite actions do not auto-inherit github.token.
+        GH_TOKEN: ${{ inputs.token || github.token }}
+      run: |
+        set -euo pipefail
+        args=( report --findings="$FINDINGS" )
+        if [ "$NIXPRS" = "true" ]; then args+=( --nixprs ); fi
+        args+=( --baseline-findings="$BASELINE_FINDINGS" )
+        args+=( --update-baseline-findings="$BASELINE_FINDINGS" )
+        "$FLAKEVULN_BIN" "${args[@]}"
+
+    - name: Probe local tool caches for save
+      id: cache-save-probe
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BASELINE_PATH: ${{ steps.baseline-scope.outputs.baseline_path }}
+      run: |
+        set -euo pipefail
+        "$ACTION_PATH/scripts/probe-cache-state.sh" "$GITHUB_OUTPUT" "$BASELINE_PATH"
+
+    # Save refreshed tool caches for the next run. These save steps remain
+    # active even when restore was skipped because the runner already had local
+    # state, such as a pre-warmed cache or an earlier invocation in the same job.
+    - name: Save grype DB
+      if: ${{ steps.cache-save-probe.outputs.grype_present == 'true' }}
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ env.XDG_CACHE_HOME != '' && format('{0}/grype/db', env.XDG_CACHE_HOME) || '~/.cache/grype/db' }}
+        key: ${{ steps.cache-meta.outputs.grype_key }}
+
+    - name: Save vulnix DB
+      if: ${{ steps.cache-save-probe.outputs.vulnix_present == 'true' }}
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ~/.cache/vulnix/Data.fs
+          ~/.cache/vulnix/Data.fs.index
+        key: ${{ steps.cache-meta.outputs.vulnix_key }}
+
+    - name: Save sbomnix HTTP responses
+      if: ${{ steps.cache-save-probe.outputs.sbomnix_present == 'true' }}
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ env.XDG_CACHE_HOME != '' && format('{0}/sbomnix/http_cache.sqlite*', env.XDG_CACHE_HOME) || '~/.cache/sbomnix/http_cache.sqlite*' }}
+        key: ${{ steps.cache-meta.outputs.sbomnix_key }}
+
+    - name: Save flakevuln previous-run baseline
+      if: ${{ steps.cache-save-probe.outputs.baseline_present == 'true' }}
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ${{ steps.baseline-scope.outputs.baseline_path }}
+        key: ${{ steps.cache-meta.outputs.baseline_key }}

@@ -1,0 +1,27 @@
+version = 1
+SPDX-PackageName = "flakevuln"
+SPDX-PackageSupplier = "Technology Innovation Institute <https://tii.ae>"
+SPDX-PackageDownloadLocation = "https://github.com/tiiuae/flakevuln"
+
+# Copyright and license are declared centrally here rather than in per-file
+# headers. The "**" annotation is the default; the more specific annotation
+# below overrides it for documentation (CC-BY-SA-4.0). When several annotations
+# match a file, the last matching one wins.
+
+# Default: everything is Apache-2.0, copyright TII.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Technology Innovation Institute (TII)"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Documentation and report templates are CC-BY-SA-4.0.
+[[annotations]]
+path = [
+  "README.md",
+  "doc/**",
+  "src/flakevuln/templates/*.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Technology Innovation Institute (TII)"
+SPDX-License-Identifier = "CC-BY-SA-4.0"

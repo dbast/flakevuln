@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flakevuln"
+dynamic = ["version"]
+description = "Flake-agnostic vulnerability scanning via the three-way re-lock diff"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSES/Apache-2.0.txt"]
+authors = [{ name = "TII", email = "henri.rosten@unikie.com" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = [
+  "colorlog",
+  "GitPython",
+  "pandas",
+  "requests",
+  "requests-cache",
+  "requests-ratelimiter",
+  "tabulate",
+]
+
+[project.urls]
+Homepage = "https://github.com/tiiuae/flakevuln"
+
+[project.scripts]
+flakevuln = "flakevuln.main:main"
+
+[tool.setuptools.dynamic]
+version = { file = ["VERSION"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"flakevuln.templates" = ["*.md"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+preview = true
+select = [
+  "B",
+  "E4",
+  "E7",
+  "E9",
+  "F",
+  "I",
+  "PLE",
+  "PLW",
+  "PLR0911",
+  "PLR0912",
+  "PLR0913",
+  "PLR0914",
+  "PLR0915",
+  "PLR0917",
+  "RUF100",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["flakevuln"]

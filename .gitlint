@@ -1,0 +1,20 @@
+[general]
+# Ignore rules, reference them by id or name (comma-separated)
+# https://jorisroovers.com/gitlint/latest/rules/builtin_rules/
+# body-is-missing: a body is optional, but when present it must satisfy the
+# body rules below.
+ignore=body-is-missing
+
+# Enable community-contributed rules
+# https://jorisroovers.com/gitlint/latest/rules/contrib_rules/
+# contrib-body-requires-signed-off-by: every commit must carry a
+# "Signed-off-by:" trailer (DCO).
+contrib=contrib-body-requires-signed-off-by
+
+# Wrap the subject at 72 characters.
+[title-max-length]
+line-length=72
+
+# Wrap body lines at 72 characters.
+[body-max-line-length]
+line-length=72

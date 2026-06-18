@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+build/
+*.egg-info/
+.eggs/
+
+# Test and lint caches
+.pytest_cache/
+.ruff_cache/
+.flakevuln/
+
+# Nix build symlink and direnv
+result
+.direnv
+
+# Editors
+.idea
+
+# vulnxscan/sbomnix dump debug CSVs (df_vulnix.csv, df_grype.csv, df_osv.csv,
+# df_report_raw.csv, meta.csv) into their working directory when run at DEBUG
+# verbosity. flakevuln runs them in a disposable tmpdir, but ignore any that
+# escape into the repo root when vulnxscan is run directly.
+/*.csv
+
+# Symlink dropped in place by the git-hooks.nix installation script
+.pre-commit-config.yaml
