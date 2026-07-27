@@ -144,9 +144,11 @@ def test_scan_target_reports_clean_scan(monkeypatch, tmp_path):
     assert not (outdir / "data.csv").exists()
     report_text = target_report.read_text(encoding="utf-8")
     assert "New Vulnerabilities Since Last Run" in report_text
-    assert "Vulnerabilities Fixed Since Last Run" in report_text
+    assert "Vulnerabilities No Longer Active Since Last Run" in report_text
     assert "Currently Active Vulnerabilities" in report_text
-    assert "It does not include vulnerabilities already listed under" in report_text
+    assert (
+        "The following table lists all non-whitelisted vulnerabilities" in report_text
+    )
     assert "No previous run baseline available" in report_text
 
 
@@ -1191,16 +1193,27 @@ def test_report_detailed_summary_includes_report_layout(tmp_path, monkeypatch):
     assert "### Targets" not in summary_text
     assert "| target | status | current |" not in summary_text
     assert (
-        "<summary>Vulnerabilities Fixed in nixpkgs Upstream</summary>" in summary_text
+        "<summary>Vulnerabilities Fixed by Updating Pinned nixpkgs</summary>"
+        in summary_text
     )
     assert (
         "<summary>Vulnerabilities Fixed in nixpkgs Unstable</summary>" in summary_text
     )
     assert "<summary>New Vulnerabilities Since Last Run</summary>" in summary_text
-    assert "<summary>Vulnerabilities Fixed Since Last Run</summary>" in summary_text
+    assert (
+        "<summary>Vulnerabilities No Longer Active Since Last Run</summary>"
+        in summary_text
+    )
     assert "<summary>Currently Active Vulnerabilities</summary>" in summary_text
     assert "<summary>Whitelisted Vulnerabilities</summary>" in summary_text
-    assert "It does not include vulnerabilities already listed under" in summary_text
+    assert "These active findings disappear when <code>nixpkgs</code>" in summary_text
+    assert "These findings are present after the in-channel comparison" in summary_text
+    assert "These active findings are present in this run" in summary_text
+    assert "These findings were active in the previous baseline" in summary_text
+    assert (
+        "The following table lists all non-whitelisted vulnerabilities" in summary_text
+    )
+    assert "These rows matched the whitelist input" in summary_text
     assert "No previous run baseline available" in summary_text
     assert (
         "<summary><code>flake#packages.x86_64-linux.default</code></summary>"
@@ -1260,13 +1273,19 @@ def test_report_summary_works_without_extra_notes(tmp_path, monkeypatch):
         in summary_text
     )
     assert (
-        "<summary>Vulnerabilities Fixed in nixpkgs Upstream</summary>" in summary_text
+        "<summary>Vulnerabilities Fixed by Updating Pinned nixpkgs</summary>"
+        in summary_text
     )
     assert "<summary>New Vulnerabilities Since Last Run</summary>" in summary_text
-    assert "<summary>Vulnerabilities Fixed Since Last Run</summary>" in summary_text
+    assert (
+        "<summary>Vulnerabilities No Longer Active Since Last Run</summary>"
+        in summary_text
+    )
     assert "<summary>Currently Active Vulnerabilities</summary>" in summary_text
     assert "<summary>Whitelisted Vulnerabilities</summary>" in summary_text
-    assert "It does not include vulnerabilities already listed under" in summary_text
+    assert (
+        "The following table lists all non-whitelisted vulnerabilities" in summary_text
+    )
 
 
 def test_report_summary_groups_multiple_targets_in_collapsible_blocks(
@@ -1531,15 +1550,25 @@ def test_report_summary_renders_previous_run_sections_and_validated_link(
     link = "[GitHub run #1234567890](https://github.com/acme/widget/actions/runs/1234567890)"
 
     assert "<summary>New Vulnerabilities Since Last Run</summary>" in summary_text
-    assert "<summary>Vulnerabilities Fixed Since Last Run</summary>" in summary_text
+    assert (
+        "<summary>Vulnerabilities No Longer Active Since Last Run</summary>"
+        in summary_text
+    )
     assert "CVE-NEW" in summary_text
     assert "CVE-OLD" in summary_text
     assert r"Last run: 2026\-06\-16T05:04:03Z, nixpkgs rev rev\-prev" in summary_text
     assert link in summary_text
     assert "<summary>New Vulnerabilities Since Last Run</summary>" in report_text
-    assert "<summary>Vulnerabilities Fixed Since Last Run</summary>" in report_text
-    assert "It does not include vulnerabilities already listed under" in summary_text
-    assert "It does not include vulnerabilities already listed under" in report_text
+    assert (
+        "<summary>Vulnerabilities No Longer Active Since Last Run</summary>"
+        in report_text
+    )
+    assert (
+        "The following table lists all non-whitelisted vulnerabilities" in summary_text
+    )
+    assert (
+        "The following table lists all non-whitelisted vulnerabilities" in report_text
+    )
     assert link in report_text
     assert "[PR](https://github.com/NixOS/nixpkgs/pull/42)" in summary_text
     assert "[PR](https://github.com/NixOS/nixpkgs/pull/42)" in report_text

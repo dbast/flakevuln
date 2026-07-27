@@ -54,6 +54,14 @@ PIN_CURRENT = "current"  # the flake's committed flake.lock
 PIN_LOCK_UPDATED = "lock_updated"  # nixpkgs re-locked in-channel
 PIN_NIX_UNSTABLE = "nix_unstable"  # nixpkgs overridden to the unstable ref
 
+# User-facing report section titles.
+_SECTION_FIXED_IN_PINNED_NIXPKGS = "Vulnerabilities Fixed by Updating Pinned nixpkgs"
+_SECTION_FIXED_IN_NIXPKGS_UNSTABLE = "Vulnerabilities Fixed in nixpkgs Unstable"
+_SECTION_NEW_SINCE_LAST_RUN = "New Vulnerabilities Since Last Run"
+_SECTION_NO_LONGER_ACTIVE = "Vulnerabilities No Longer Active Since Last Run"
+_SECTION_CURRENTLY_ACTIVE = "Currently Active Vulnerabilities"
+_SECTION_WHITELISTED = "Whitelisted Vulnerabilities"
+
 # Sentinel meaning "remove this variable from the child env".
 DROP_ENV_VAR = object()
 
@@ -1623,39 +1631,28 @@ class FlakeScanner:
         report_str = report_str.replace(
             "PROJECT_REVISION", _safe_markdown_code(self.repo_head)
         )
+        notes = self._target_report_notes(flakeref, target)
         report_str = report_str.replace(
             "FIXED_IN_NIXPKGS_SECTION",
             _render_collapsible_block(
-                "Vulnerabilities Fixed in nixpkgs Upstream",
-                (
-                    "The following vulnerabilities have been fixed in the channel "
-                    f"{_safe_markdown_code(f'{flakeref}#{target}')} is currently "
-                    "pinned to, but the fixes are "
-                    "not yet included. Update the project's flake.lock to mitigate "
-                    "them:"
-                ),
+                _SECTION_FIXED_IN_PINNED_NIXPKGS,
+                notes["fixed_upstream"],
                 sections["fixed_upstream"],
             ),
         )
         report_str = report_str.replace(
             "FIXED_IN_NIX_UNSTABLE_SECTION",
             _render_collapsible_block(
-                "Vulnerabilities Fixed in nixpkgs Unstable",
-                (
-                    "The following vulnerabilities have been fixed in nixpkgs "
-                    "unstable, but the fixes have not been backported to the "
-                    f"channel {_safe_markdown_code(f'{flakeref}#{target}')} is "
-                    "pinned to. Consider "
-                    "whitelisting false positives, or helping backport the fix to "
-                    "the correct nixpkgs branch:"
-                ),
+                _SECTION_FIXED_IN_NIXPKGS_UNSTABLE,
+                notes["fixed_unstable"],
                 sections["fixed_unstable"],
             ),
         )
         report_str = report_str.replace(
             "NEW_SINCE_LAST_RUN_SECTION",
             _render_collapsible_block(
-                "New Vulnerabilities Since Last Run",
+                _SECTION_NEW_SINCE_LAST_RUN,
+                notes["new_since_last_run"],
                 sections["last_run"],
                 sections["new_since_last_run"],
             ),
@@ -1663,26 +1660,24 @@ class FlakeScanner:
         report_str = report_str.replace(
             "FIXED_SINCE_LAST_RUN_SECTION",
             _render_collapsible_block(
-                "Vulnerabilities Fixed Since Last Run",
+                _SECTION_NO_LONGER_ACTIVE,
+                notes["fixed_since_last_run"],
                 sections["fixed_since_last_run"],
             ),
         )
         report_str = report_str.replace(
             "CURRENT_VULNS_SECTION",
             _render_collapsible_block(
-                "Currently Active Vulnerabilities",
-                _current_vulnerabilities_note(flakeref, target),
+                _SECTION_CURRENTLY_ACTIVE,
+                notes["current"],
                 sections["current"],
             ),
         )
         report_str = report_str.replace(
             "WHITELISTED_SECTION",
             _render_collapsible_block(
-                "Whitelisted Vulnerabilities",
-                (
-                    "The following vulnerabilities would otherwise have been "
-                    "included, but were left out due to whitelisting:"
-                ),
+                _SECTION_WHITELISTED,
+                notes["whitelisted"],
                 sections["whitelisted"],
             ),
         )
@@ -1711,6 +1706,43 @@ class FlakeScanner:
             "whitelisted": self._whitelisted_tbl(flakeref, target),
         }
 
+    def _target_report_notes(self, flakeref, target):
+        """Return section explanations for one rendered target report."""
+        input_name = _safe_markdown_code(self.input_name or "nixpkgs")
+        target_ref = _safe_markdown_code(f"{flakeref}#{target}")
+        return {
+            "fixed_upstream": (
+                f"These active findings disappear when {input_name} is re-locked "
+                "to the latest revision allowed by the flake input. Updating "
+                "the project's flake.lock should pick up the fixes:"
+            ),
+            "fixed_unstable": (
+                "These findings are present after the in-channel comparison, "
+                f"but disappear when {input_name} is overridden to the configured "
+                "unstable ref. They usually need a nixpkgs branch backport or a "
+                "channel/input update:"
+            ),
+            "new_since_last_run": (
+                "These active findings are present in this run and were not "
+                "present in the previous baseline for the same target. Use this "
+                "section for newly introduced or newly disclosed issues:"
+            ),
+            "fixed_since_last_run": (
+                "These findings were active in the previous baseline for the "
+                "same target but are not active in this run. They may have been "
+                "fixed, removed from the dependency graph, or whitelisted:"
+            ),
+            "current": (
+                "The following table lists all non-whitelisted vulnerabilities "
+                f"detected in the current scan for {target_ref}:"
+            ),
+            "whitelisted": (
+                "These rows matched the whitelist input and are kept for audit "
+                "visibility. They are not counted as active findings in the "
+                "other sections:"
+            ),
+        }
+
     def render_detailed_summary(self):
         """Render the Step Summary using the same layout as the local report."""
         df_targets = self._report_targets_df()
@@ -1720,13 +1752,15 @@ class FlakeScanner:
         blocks = ["## Detailed Vulnerability Report", ""]
         for flakeref, target in target_pairs:
             sections = self._target_report_sections(flakeref, target)
+            notes = self._target_report_notes(flakeref, target)
             summary_target = _summary_target_label(flakeref, target)
             blocks.append("<details open>")
             blocks.append(f"<summary><code>{summary_target}</code></summary>")
             blocks.append("")
             blocks.append(
                 _render_collapsible_block(
-                    "Vulnerabilities Fixed in nixpkgs Upstream",
+                    _SECTION_FIXED_IN_PINNED_NIXPKGS,
+                    notes["fixed_upstream"],
                     sections["fixed_upstream"],
                 )
             )
@@ -1734,14 +1768,16 @@ class FlakeScanner:
             if self.unstable_ref:
                 blocks.append(
                     _render_collapsible_block(
-                        "Vulnerabilities Fixed in nixpkgs Unstable",
+                        _SECTION_FIXED_IN_NIXPKGS_UNSTABLE,
+                        notes["fixed_unstable"],
                         sections["fixed_unstable"],
                     )
                 )
                 blocks.append("")
             blocks.append(
                 _render_collapsible_block(
-                    "New Vulnerabilities Since Last Run",
+                    _SECTION_NEW_SINCE_LAST_RUN,
+                    notes["new_since_last_run"],
                     sections["last_run"],
                     sections["new_since_last_run"],
                 )
@@ -1749,22 +1785,24 @@ class FlakeScanner:
             blocks.append("")
             blocks.append(
                 _render_collapsible_block(
-                    "Vulnerabilities Fixed Since Last Run",
+                    _SECTION_NO_LONGER_ACTIVE,
+                    notes["fixed_since_last_run"],
                     sections["fixed_since_last_run"],
                 )
             )
             blocks.append("")
             blocks.append(
                 _render_collapsible_block(
-                    "Currently Active Vulnerabilities",
-                    _current_vulnerabilities_note(flakeref, target),
+                    _SECTION_CURRENTLY_ACTIVE,
+                    notes["current"],
                     sections["current"],
                 )
             )
             blocks.append("")
             blocks.append(
                 _render_collapsible_block(
-                    "Whitelisted Vulnerabilities",
+                    _SECTION_WHITELISTED,
+                    notes["whitelisted"],
                     sections["whitelisted"],
                 )
             )
@@ -2441,17 +2479,6 @@ def _render_collapsible_block(summary, *parts, open_by_default=True):
         lines.extend(["", body, ""])
     lines.append("</details>")
     return "\n".join(lines)
-
-
-def _current_vulnerabilities_note(flakeref, target):
-    """Explain that the active section excludes already-fixed findings."""
-    safe_target = _safe_inline_text(f"{flakeref}#{target}")
-    return (
-        "The following table lists vulnerabilities still currently "
-        f"impacting <code>{safe_target}</code>. It does not include "
-        "vulnerabilities already listed under 'Vulnerabilities Fixed "
-        "Since Last Run':"
-    )
 
 
 def _reformat_vuln_id(row):
