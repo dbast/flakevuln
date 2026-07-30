@@ -1692,10 +1692,18 @@ class FlakeScanner:
         err = self._read_error(flakeref, target, [PIN_CURRENT])
         return {
             "fixed_upstream": self._diff_section(
-                df_target, flakeref, target, PIN_CURRENT, PIN_LOCK_UPDATED
+                df_target,
+                flakeref,
+                target,
+                PIN_CURRENT,
+                PIN_LOCK_UPDATED,
             ),
             "fixed_unstable": self._diff_section(
-                df_target, flakeref, target, PIN_LOCK_UPDATED, PIN_NIX_UNSTABLE
+                df_target,
+                flakeref,
+                target,
+                PIN_LOCK_UPDATED,
+                PIN_NIX_UNSTABLE,
             ),
             "last_run": self._last_run_metadata_line(flakeref, target),
             "new_since_last_run": self._since_last_run_section(flakeref, target),
@@ -1824,7 +1832,8 @@ class FlakeScanner:
             PIN_LOCK_UPDATED
         ):
             left_pin = PIN_CURRENT
-        df = self._diff_scans(df_target, left_pin, right_pin)
+        df_right = self._target_df(flakeref, target)
+        df = self._diff_scans(df_target, left_pin, right_pin, df_right)
         err = self._read_error(flakeref, target, [left_pin, right_pin])
         return _render_error(err) or self._df_to_report_tbl(df)
 
@@ -1870,12 +1879,14 @@ class FlakeScanner:
             axis=1,
         )
 
-    def _diff_scans(self, df, left_pin, right_pin):
+    def _diff_scans(self, df, left_pin, right_pin, df_right_source=None):
         LOG.debug("'%s' diff '%s'", left_pin, right_pin)
         if "pintype" not in df.columns or df.empty:
             return _empty_scan_df()
+        if df_right_source is None:
+            df_right_source = df
         df_left = df[df["pintype"] == left_pin]
-        df_right = df[df["pintype"] == right_pin]
+        df_right = df_right_source[df_right_source["pintype"] == right_pin]
         return self._diff_left_only_df(df_left, df_right)
 
     def _diff_left_only_df(self, df_left, df_right):

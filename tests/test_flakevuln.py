@@ -961,6 +961,30 @@ def test_diff_sections_render_nixprs_links_for_upstream_and_unstable(tmp_path):
     assert "[PR](https://github.com/NixOS/nixpkgs/pull/2)" in sections["fixed_unstable"]
 
 
+def test_diff_sections_do_not_treat_whitelisted_comparison_rows_as_fixed(tmp_path):
+    """Rows present but whitelisted in the comparison scan are not fixes."""
+    target = "packages.x86_64-linux.default"
+    scanner = _make_scanner(
+        tmp_path,
+        flakeref="flake",
+        unstable_ref="github:NixOS/nixpkgs/nixos-unstable",
+    )
+    scanner.scanned_targets = [("flake", target)]
+    scanner.df_scan = pd.DataFrame(
+        [
+            _scan_row(target, PIN_CURRENT, "CVE-UP", "pkg-up"),
+            _scan_row(target, PIN_LOCK_UPDATED, "CVE-UP", "pkg-up", whitelist="True"),
+            _scan_row(target, PIN_LOCK_UPDATED, "CVE-UN", "pkg-un"),
+            _scan_row(target, PIN_NIX_UNSTABLE, "CVE-UN", "pkg-un", whitelist="True"),
+        ]
+    )
+
+    sections = scanner._target_report_sections("flake", target)
+
+    assert sections["fixed_upstream"] == "```No vulnerabilities```"
+    assert sections["fixed_unstable"] == "```No vulnerabilities```"
+
+
 def test_report_table_sorts_by_numeric_severity_rank(tmp_path):
     """Report tables should keep critical findings above lower severities."""
     scanner = _make_scanner(tmp_path, flakeref="flake")
