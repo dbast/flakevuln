@@ -27,6 +27,9 @@ from flakevuln.version import get_py_pkg_version
 MYDIR = Path(os.path.dirname(os.path.realpath(__file__)))
 REPOROOT = MYDIR / ".."
 FLAKEVULN = REPOROOT / "src" / "flakevuln" / "main.py"
+WHITELISTED_COLLAPSED_SECTION = (
+    "<details>\n<summary>Whitelisted Vulnerabilities (press to expand)</summary>"
+)
 
 
 def _make_scanner(tmp_path, flakeref="github:example/flake", unstable_ref=""):
@@ -149,6 +152,7 @@ def test_scan_target_reports_clean_scan(monkeypatch, tmp_path):
     assert (
         "The following table lists all non-whitelisted vulnerabilities" in report_text
     )
+    assert WHITELISTED_COLLAPSED_SECTION in report_text
     assert "No previous run baseline available" in report_text
 
 
@@ -1229,7 +1233,7 @@ def test_report_detailed_summary_includes_report_layout(tmp_path, monkeypatch):
         in summary_text
     )
     assert "<summary>Currently Active Vulnerabilities</summary>" in summary_text
-    assert "<summary>Whitelisted Vulnerabilities</summary>" in summary_text
+    assert WHITELISTED_COLLAPSED_SECTION in summary_text
     assert "These active findings disappear when <code>nixpkgs</code>" in summary_text
     assert "These findings are present after the in-channel comparison" in summary_text
     assert "These active findings are present in this run" in summary_text
@@ -1243,7 +1247,7 @@ def test_report_detailed_summary_includes_report_layout(tmp_path, monkeypatch):
         "<summary><code>flake#packages.x86_64-linux.default</code></summary>"
         in summary_text
     )
-    assert "<summary>Whitelisted Vulnerabilities</summary>" in summary_text
+    assert WHITELISTED_COLLAPSED_SECTION in summary_text
     assert "[CVE-1](https://example.test/CVE-1)" in summary_text
     assert "CVE-2" in summary_text
     assert "pkg-whitelisted" in summary_text
@@ -1306,7 +1310,7 @@ def test_report_summary_works_without_extra_notes(tmp_path, monkeypatch):
         in summary_text
     )
     assert "<summary>Currently Active Vulnerabilities</summary>" in summary_text
-    assert "<summary>Whitelisted Vulnerabilities</summary>" in summary_text
+    assert WHITELISTED_COLLAPSED_SECTION in summary_text
     assert (
         "The following table lists all non-whitelisted vulnerabilities" in summary_text
     )

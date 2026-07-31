@@ -61,6 +61,7 @@ _SECTION_NEW_SINCE_LAST_RUN = "New Vulnerabilities Since Last Run"
 _SECTION_NO_LONGER_ACTIVE = "Vulnerabilities No Longer Active Since Last Run"
 _SECTION_CURRENTLY_ACTIVE = "Currently Active Vulnerabilities"
 _SECTION_WHITELISTED = "Whitelisted Vulnerabilities"
+_SECTION_WHITELISTED_COLLAPSED = f"{_SECTION_WHITELISTED} (press to expand)"
 
 # Sentinel meaning "remove this variable from the child env".
 DROP_ENV_VAR = object()
@@ -1676,9 +1677,10 @@ class FlakeScanner:
         report_str = report_str.replace(
             "WHITELISTED_SECTION",
             _render_collapsible_block(
-                _SECTION_WHITELISTED,
+                _SECTION_WHITELISTED_COLLAPSED,
                 notes["whitelisted"],
                 sections["whitelisted"],
+                open_by_default=False,
             ),
         )
         # Write the target report
@@ -1809,9 +1811,10 @@ class FlakeScanner:
             blocks.append("")
             blocks.append(
                 _render_collapsible_block(
-                    _SECTION_WHITELISTED,
+                    _SECTION_WHITELISTED_COLLAPSED,
                     notes["whitelisted"],
                     sections["whitelisted"],
+                    open_by_default=False,
                 )
             )
             blocks.append("")
