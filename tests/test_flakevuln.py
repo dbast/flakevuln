@@ -1091,6 +1091,98 @@ def test_current_report_prefers_evaluated_unstable_over_repology(tmp_path):
     assert sections["fixed_unstable"] == "```No vulnerabilities```"
 
 
+def test_diff_sections_prefer_evaluated_unstable_over_repology(tmp_path):
+    """Report diffs should use the evaluated unstable version when present."""
+    target = "packages.x86_64-linux.default"
+    scanner = _make_scanner(
+        tmp_path,
+        flakeref="flake",
+        unstable_ref="github:NixOS/nixpkgs/nixos-unstable",
+    )
+    scanner.scanned_targets = [("flake", target)]
+    scanner.df_scan = pd.DataFrame(
+        [
+            _scan_row(
+                target,
+                PIN_CURRENT,
+                "CVE-1",
+                "linux",
+                version_local="6.18.42",
+                version_nixpkgs="7.2",
+            ),
+            _scan_row(
+                target,
+                PIN_NIX_UNSTABLE,
+                "CVE-1",
+                "linux",
+                version_local="6.18.44",
+                version_nixpkgs="7.2",
+            ),
+        ]
+    )
+    baseline = _make_scanner(tmp_path / "baseline", flakeref="flake")
+    baseline.scanned_targets = [("flake", target)]
+    baseline.df_scan = pd.DataFrame(
+        [
+            _scan_row(
+                target,
+                PIN_CURRENT,
+                "CVE-OLD",
+                "old-package",
+                version_local="1.1",
+                version_nixpkgs="1.2-repology",
+                version_upstream="1.3",
+            )
+        ]
+    )
+    scanner.baseline = baseline
+
+    sections = scanner._target_report_sections("flake", target)
+
+    assert "| nix_unstable" in sections["fixed_upstream"]
+    assert "| 6.18.44" in sections["fixed_upstream"]
+    assert "7.2" not in sections["fixed_upstream"]
+    assert "| nix_unstable" in sections["new_since_last_run"]
+    assert "| 6.18.44" in sections["new_since_last_run"]
+    assert "7.2" not in sections["new_since_last_run"]
+    assert "not detected" in sections["fixed_since_last_run"]
+    assert "1.2-repology" not in sections["fixed_since_last_run"]
+
+
+def test_fixed_unstable_section_omits_unavailable_unstable_version(tmp_path):
+    """A finding absent from unstable has no evaluated version to display."""
+    target = "packages.x86_64-linux.default"
+    scanner = _make_scanner(
+        tmp_path,
+        flakeref="flake",
+        unstable_ref="github:NixOS/nixpkgs/nixos-unstable",
+    )
+    scanner.scanned_targets = [("flake", target)]
+    scanner.df_scan = pd.DataFrame(
+        [
+            _scan_row(target, PIN_CURRENT, "CVE-1", "pkg"),
+            _scan_row(
+                target,
+                PIN_LOCK_UPDATED,
+                "CVE-1",
+                "pkg",
+                version_local="1.1",
+                version_nixpkgs="1.2",
+                version_upstream="1.3",
+            ),
+        ]
+    )
+
+    sections = scanner._target_report_sections("flake", target)
+    table = sections["fixed_unstable"]
+
+    header = next(line for line in table.splitlines() if line.startswith("| vuln_id"))
+    assert "nix_unstable" not in header
+    assert "upstream" in header
+    assert "1.3" in table
+    assert "not detected" in sections["current"]
+
+
 def test_current_report_wraps_multiple_unstable_versions(tmp_path):
     """Unstable version lists should not force the report table to be wide."""
     target = "packages.x86_64-linux.default"

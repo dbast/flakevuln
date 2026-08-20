@@ -873,7 +873,7 @@ def test_completed_empty_comparison_can_report_fixed(monkeypatch, tmp_path):
 
     scanner = FlakeScanner.from_findings_data(data)
     section = scanner._diff_section(
-        scanner._target_df(scanner.flakeref, TARGET, active_only=True),
+        scanner._target_report_context(scanner.flakeref, TARGET),
         scanner.flakeref,
         TARGET,
         PIN_CURRENT,
@@ -925,7 +925,7 @@ def test_disabled_comparison_never_reports_findings_as_fixed(monkeypatch, tmp_pa
     }
 
     section = scanner._diff_section(
-        scanner._target_df(scanner.flakeref, TARGET, active_only=True),
+        scanner._target_report_context(scanner.flakeref, TARGET),
         scanner.flakeref,
         TARGET,
         PIN_CURRENT,
@@ -956,7 +956,7 @@ def test_shown_comparison_that_states_a_skip_reason_is_disabled(monkeypatch, tmp
 
     assert scanner._comparison_enabled(PIN_LOCK_UPDATED) is False
     section = scanner._diff_section(
-        scanner._target_df(scanner.flakeref, TARGET, active_only=True),
+        scanner._target_report_context(scanner.flakeref, TARGET),
         scanner.flakeref,
         TARGET,
         PIN_CURRENT,
