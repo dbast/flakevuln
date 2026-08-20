@@ -1091,6 +1091,107 @@ def test_current_report_prefers_evaluated_unstable_over_repology(tmp_path):
     assert sections["fixed_unstable"] == "```No vulnerabilities```"
 
 
+def test_current_report_wraps_multiple_unstable_versions(tmp_path):
+    """Unstable version lists should not force the report table to be wide."""
+    target = "packages.x86_64-linux.default"
+    scanner = _make_scanner(
+        tmp_path,
+        flakeref="flake",
+        unstable_ref="github:NixOS/nixpkgs/nixos-unstable",
+    )
+    scanner.scanned_targets = [("flake", target)]
+    scanner.df_scan = pd.DataFrame(
+        [
+            _scan_row(target, PIN_CURRENT, "CVE-1", "perl"),
+            _scan_row(
+                target,
+                PIN_NIX_UNSTABLE,
+                "CVE-1",
+                "perl",
+                version_local="5.42.0-env",
+            ),
+            _scan_row(
+                target,
+                PIN_NIX_UNSTABLE,
+                "CVE-1",
+                "perl",
+                version_local="5.42.0-binlore",
+            ),
+            _scan_row(
+                target,
+                PIN_NIX_UNSTABLE,
+                "CVE-1",
+                "perl",
+                version_local="5.42.0",
+            ),
+        ]
+    )
+
+    table = scanner._target_report_sections("flake", target)["current"]
+
+    assert "5.42.0-env<br>5.42.0-binlore<br>5.42.0" in table
+    assert "5.42.0-env, 5.42.0-binlore, 5.42.0" not in table
+
+
+def test_current_report_caps_unstable_version_list(tmp_path):
+    """Long unstable version lists should end with an omission marker."""
+    target = "packages.x86_64-linux.default"
+    scanner = _make_scanner(
+        tmp_path,
+        flakeref="flake",
+        unstable_ref="github:NixOS/nixpkgs/nixos-unstable",
+    )
+    scanner.scanned_targets = [("flake", target)]
+    scanner.df_scan = pd.DataFrame(
+        [
+            _scan_row(target, PIN_CURRENT, "CVE-1", "perl"),
+            *[
+                _scan_row(
+                    target,
+                    PIN_NIX_UNSTABLE,
+                    "CVE-1",
+                    "perl",
+                    version_local=version,
+                )
+                for version in ("5.42.0-env", "5.42.0-binlore", "5.42.0", "5.44.0")
+            ],
+        ]
+    )
+
+    table = scanner._target_report_sections("flake", target)["current"]
+
+    assert "5.42.0-env<br>5.42.0-binlore<br>5.42.0<br>..." in table
+    assert "5.44.0" not in table
+
+
+def test_current_report_preserves_commas_inside_unstable_version(tmp_path):
+    """Version punctuation must not be mistaken for a list delimiter."""
+    target = "packages.x86_64-linux.default"
+    scanner = _make_scanner(
+        tmp_path,
+        flakeref="flake",
+        unstable_ref="github:NixOS/nixpkgs/nixos-unstable",
+    )
+    scanner.scanned_targets = [("flake", target)]
+    scanner.df_scan = pd.DataFrame(
+        [
+            _scan_row(target, PIN_CURRENT, "CVE-1", "pkg"),
+            _scan_row(
+                target,
+                PIN_NIX_UNSTABLE,
+                "CVE-1",
+                "pkg",
+                version_local="1.0, release",
+            ),
+        ]
+    )
+
+    table = scanner._target_report_sections("flake", target)["current"]
+
+    assert "1.0, release" in table
+    assert "1.0<br>release" not in table
+
+
 def test_report_table_sorts_by_numeric_severity_rank(tmp_path):
     """Report tables should keep critical findings above lower severities."""
     scanner = _make_scanner(tmp_path, flakeref="flake")

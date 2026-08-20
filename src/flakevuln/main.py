@@ -123,6 +123,11 @@ _INPUT_CONFIDENCE_ORDER = (
 )
 _FLAKE_INPUT_PACKAGE_CHUNK_SIZE = 256
 
+# Version fields are presentation-bounded so one unusual package version does
+# not determine the width of the whole report table.
+_REPORT_VERSION_MAX_CHARS = 16
+_REPORT_VERSION_MAX_ITEMS = 3
+
 # Sentinel meaning "remove this variable from the child env".
 DROP_ENV_VAR = object()
 
@@ -445,6 +450,18 @@ def _safe_markdown_table_text(text):
     """Return inert plain text safe inside GFM table cells."""
     escaped = html.escape(_single_line_text(text))
     return _escape_inline_markdown_text(escaped)
+
+
+def _format_report_version_list(value):
+    """Render one version or an ordered version tuple in a GFM table cell."""
+    versions = value if isinstance(value, tuple) else (value,)
+    rendered = [
+        _safe_markdown_table_text(str(version)[:_REPORT_VERSION_MAX_CHARS])
+        for version in versions[:_REPORT_VERSION_MAX_ITEMS]
+    ]
+    if len(versions) > _REPORT_VERSION_MAX_ITEMS:
+        rendered.append("...")
+    return "<br>".join(rendered)
 
 
 def _safe_markdown_code_span(text):
@@ -1612,7 +1629,7 @@ class FlakeScanner:
             versions.setdefault(key, [])
             if version not in versions[key]:
                 versions[key].append(version)
-        return {key: ", ".join(values) for key, values in versions.items()}
+        return {key: tuple(values) for key, values in versions.items()}
 
     def _aggregate_current(self, df_current):
         """Group current rows by (vuln_id, package), aggregating versions.
@@ -2720,7 +2737,9 @@ class FlakeScanner:
         df["_sortcol_sort"] = df["sortcol"].map(_numeric_score)
         df = df.sort_values(by=sort_cols, ascending=False)
         # Truncate version strings
-        df["version_local"] = df["version_local"].str.slice(0, 16)
+        df["version_local"] = df["version_local"].str.slice(
+            0, _REPORT_VERSION_MAX_CHARS
+        )
         # Report table will have the following columns
         report_cols = ["vuln_id", "package", "severity", "version_local"]
         # Optionally add the following upstream versions
@@ -2740,12 +2759,14 @@ class FlakeScanner:
             if ver_rename not in report_cols:
                 report_cols.append(ver_rename)
                 df[ver_rename] = ""
-            fallback = df["version_nixpkgs"].str.slice(0, 16)
+            fallback = df["version_nixpkgs"].str.slice(0, _REPORT_VERSION_MAX_CHARS)
             df[ver_rename] = df[ver_rename].where(df[ver_rename].ne(""), fallback)
         if up_ver and "version_upstream" in df:
             ver_rename = "upstream"
             report_cols.append(ver_rename)
-            df[ver_rename] = df["version_upstream"].str.slice(0, 16)
+            df[ver_rename] = df["version_upstream"].str.slice(
+                0, _REPORT_VERSION_MAX_CHARS
+            )
         # Add the 'comment' column
         df["comment"] = df.apply(_reformat_comment, axis=1)
         if _FLAKE_INPUT_COLUMN in df.columns:
@@ -2767,15 +2788,16 @@ class FlakeScanner:
             )
         # Select only the report_cols
         df = df[report_cols]
-        for column in (
-            "package",
-            "severity",
-            "version_local",
-            "nix_unstable",
-            "upstream",
-        ):
+        cell_formatters = {
+            "package": _safe_markdown_table_text,
+            "severity": _safe_markdown_table_text,
+            "version_local": _safe_markdown_table_text,
+            PIN_NIX_UNSTABLE: _format_report_version_list,
+            "upstream": _safe_markdown_table_text,
+        }
+        for column, formatter in cell_formatters.items():
             if column in df.columns:
-                df[column] = df[column].map(_safe_markdown_table_text)
+                df[column] = df[column].map(formatter)
         df = df.drop_duplicates(keep="first")
         # Format dataframe to markdown table
         table = tabulate(
