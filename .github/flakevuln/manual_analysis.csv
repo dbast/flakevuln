@@ -93,3 +93,29 @@ CVE-(2026-41991|2026-41992),True,gzip,1.2.4,,1.14,1.14,Build-time bootstrap arti
 CVE-2026-58050,True,libssh2,1.11.1,,1.11.1,1.11.1,Target-specific false positive: CVE is limited to 32-bit platforms; scanned libssh2 component is built for x86_64-linux.
 CVE-2026-59890,True,setuptools,44.0.0-source,,83.0.0,83.0.0,Target-specific false positive: CVE requires macOS APFS/HFS+ Unicode normalization behavior; scanned setuptools source component is in an x86_64-linux target.
 OSV-2021-777,True,libxml2,2.15.3,,2.15.3,2.15.3,Fixed upstream in libxml2 2.9.13; the scanned 2.15.3 package is newer than the fixed release.
+OSV-(2026-350|2026-973|2026-987),True,binutils,2.46,,2.46,2.47,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-(2024-112|2024-914),True,boost,1.89.0,,1.91.0,1.92.0,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+(CVE-2025-50422|OSV-2023-298),True,cairo,1.18.4,,1.109,1.109,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2026-14363|2026-39837|2026-39839|2026-39840|2026-39841|2026-58519|2026-58521),True,cargo,1.97.1,,0.4.9,0.4.9,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2026-67215|2026-67216|2026-67217),True,cjson,1.7.19,,1.7.19,1.7.19,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-2024-678,True,flac,1.5.0,,1.5.0,1.5.0,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-2023-4039,True,gcc,15.3.0,,15.3.0,16.2.0,Target-specific false positive: CVE is limited to GCC/Arm GNU Toolchain targeting AArch64; scanned component is an x86_64-linux build.
+CVE-2026-5201,True,gdk-pixbuf,2.44.7,,2.44.7,2.44.8,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2019-1010022|2019-1010023|2019-1010024|2019-1010025|2026-6368|2026-6791),True,glibc,2.42,,2.42,2.44,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2019-1010022|2019-1010023|2019-1010024|2019-1010025|2025-5702|2025-5745|2025-8058|2026-0861|2026-0915|2026-6368|2026-6791),True,glibc,2.42-67,,2.42,2.44,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-2026-962,True,harfbuzz,13.2.1,,13.2.1,14.3.1,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-(2023-1307|2023-877),True,libbpf,1.7.0,,1.7.0,1.7.0,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-2024-395,True,libpcap,1.10.6,,1.10.6,1.10.6,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-2022-33065,True,libsndfile,1.2.2,,1.2.2,1.2.2,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2026-15370|2026-59842|2026-59843|2026-59844|2026-59845|2026-59846|2026-59847|2026-59848|2026-59849|2026-59850|2026-59851),True,libssh,0.12.2,,0.12.2,0.12.2,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2023-6228|2023-6277|2023-52356|2026-4775),True,libtiff,4.7.2,,4.7.2,4.7.2,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-(2026-55|2026-97),True,libvpx,1.16.0,,1.16.0,1.16.0,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-(2024-698|2026-565),True,libxml2,2.15.3,,2.15.3,2.15.3,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-2025-219,True,openjpeg,2.5.4,,2.5.4,2.5.4,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2026-14456|2026-54876),True,openssl,3.6.3,,4.0.1,4.0.1,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+OSV-2023-197,True,p11-kit,0.26.2,,0.26.2,0.26.5,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-2026-15534,True,perl,5.42.0,,5.42.0,5.44.0,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2026-15806|2026-17084|2026-18503|2026-3298|2026-6879),True,python,2.7.18.12,,3.14.7,3.14.7,Build-time bootstrap artifact: Python 2.7 derivations are build-closure-only artifacts; Python 3 rows remain active.
+CVE-(2026-15806|2026-17084|2026-18503|2026-6879),True,python,3.14.4,,3.14.7,3.14.7,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-(2025-15367|2026-15806|2026-17084|2026-4360),True,python3,3.14.7,,3.14.7,3.14.7,False positive: scanner triage classified the Nixpkgs package/version as not affected based on Repology/upstream package data.
+CVE-2024-21485,True,dash,0.5.13.5,,,,Incorrect package: CVE affects Plotly/Python Dash and dash-core/html components; scanned component is the dash POSIX shell for x86_64-linux.
