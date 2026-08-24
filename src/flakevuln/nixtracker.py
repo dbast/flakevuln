@@ -2,9 +2,10 @@
 """Best-effort Nixpkgs security tracker enrichment for report output.
 
 This runs in the trusted report phase, after findings are materialized. It
-queries CVE IDs, follows returned NIXPKGS issue codes to public detail pages
-when needed for bundled CVEs, and annotates matching findings with CVE-level
-tracker issue metadata. It deliberately does not suppress findings.
+queries CVE IDs and annotates matching findings with CVE-level tracker issue
+metadata. Current tracker responses expose CVE membership through expanded
+issue suggestions. Legacy responses fall back to public issue detail pages when
+needed for bundled CVEs. It deliberately does not suppress findings.
 """
 
 import logging
@@ -23,6 +24,7 @@ REQUEST_TIMEOUT = 60
 CVE_BATCH_SIZE = 200
 TRACKER_REQUESTS_PER_SECOND = 1
 TRACKER_REQUESTS_PER_MINUTE = 30
+TRACKER_ISSUE_PAGE_LIMIT = 500
 USER_AGENT = "flakevuln-nixtracker/0 (https://github.com/tiiuae/flakevuln)"
 
 CVE_ID_RE = re.compile(r"^CVE-[0-9]{4}-[0-9]{4,}$")
@@ -30,6 +32,13 @@ NVD_CVE_DETAIL_RE = re.compile(
     r"https://nvd\.nist\.gov/vuln/detail/(CVE-[0-9]{4}-[0-9]{4,})"
 )
 NIXPKGS_ISSUE_CODE_RE = re.compile(r"^NIXPKGS-[0-9]{4}-[0-9]{4,19}$")
+ISSUE_STATUS_LABELS = {
+    "U": "unknown",
+    "A": "affected",
+    "NA": "not affected",
+    "O": "not relevant for us",
+    "W": "won't fix",
+}
 
 
 @dataclass(frozen=True)
@@ -39,6 +48,15 @@ class TrackerIssue:
     cve: str
     code: str
     status: str
+
+
+class TrackerIssueRows(list):
+    """Issue rows with fetch metadata for the current paginated API."""
+
+    def __init__(self, rows=(), *, from_expanded_api=False, complete=True):
+        super().__init__(rows)
+        self.from_expanded_api = from_expanded_api
+        self.complete = complete
 
 
 def is_cve_id(value):
@@ -62,6 +80,12 @@ def tracker_issue_url(code):
 def _single_line_text(value):
     """Normalize external text into a single line."""
     return re.sub(r"[\x00-\x1f\x7f]+", " ", str(value)).strip()
+
+
+def _issue_status_label(value):
+    """Return a readable issue status for tracker API status codes."""
+    status = _single_line_text(value)
+    return ISSUE_STATUS_LABELS.get(status, status)
 
 
 def _chunked(items, size):
@@ -95,6 +119,114 @@ def _create_tracker_session():
     return session
 
 
+def _issue_items_from_expanded_page(payload, requested_cves):
+    """Return legacy-shaped issue items from a paginated expanded issue page."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+        raise ValueError("tracker issues API returned unusable paginated results")
+
+    issues = []
+    for issue in payload["results"]:
+        if not isinstance(issue, dict):
+            continue
+        issue_code = _single_line_text(issue.get("code", ""))
+        issue_status = _issue_status_label(issue.get("status", ""))
+        if not is_issue_code(issue_code):
+            continue
+        suggestions = issue.get("suggestions", [])
+        if not isinstance(suggestions, list):
+            continue
+        for suggestion in suggestions:
+            if not isinstance(suggestion, dict):
+                continue
+            cve = _single_line_text(suggestion.get("cve_id", ""))
+            if cve not in requested_cves:
+                continue
+            code = _single_line_text(suggestion.get("issue_code", "")) or issue_code
+            if not is_issue_code(code):
+                code = issue_code
+            issues.append(
+                {
+                    "cve": cve,
+                    "code": code,
+                    "status": issue_status
+                    or _single_line_text(suggestion.get("status", "")),
+                }
+            )
+    return issues
+
+
+def _expanded_issue_page_count(payload):
+    """Return the bounded page count implied by a paginated issue response."""
+    if not isinstance(payload, dict):
+        return TRACKER_ISSUE_PAGE_LIMIT
+    count = payload.get("count")
+    results = payload.get("results")
+    if (
+        isinstance(count, int)
+        and not isinstance(count, bool)
+        and isinstance(results, list)
+        and results
+    ):
+        page_count = max(1, (count + len(results) - 1) // len(results))
+        return min(page_count, TRACKER_ISSUE_PAGE_LIMIT)
+    return TRACKER_ISSUE_PAGE_LIMIT
+
+
+def _fetch_expanded_issue_pages(cves, *, session, timeout, first_payload=None):
+    """Fetch current tracker issue pages and return legacy-shaped issue items."""
+    requested_cves = set(cves)
+    issues = []
+    found_cves = set()
+    seen = set()
+    page = 1
+    page_limit = TRACKER_ISSUE_PAGE_LIMIT
+    payload = first_payload
+    while page <= page_limit:
+        if payload is None:
+            params = {"expand": "suggestions"}
+            if page > 1:
+                # The tracker currently ignores cve=, so the probe response
+                # and unfiltered pages are the same listing. If that changes,
+                # follow payload["next"] instead.
+                params["page"] = str(page)
+            resp = session.get(TRACKER_ISSUES_URL, params=params, timeout=timeout)
+            resp.raise_for_status()
+            payload = resp.json()
+        if page == 1:
+            page_limit = _expanded_issue_page_count(payload)
+
+        try:
+            page_items = _issue_items_from_expanded_page(payload, requested_cves)
+        except ValueError as error:
+            LOG.warning(
+                "Nixpkgs security tracker page %s could not be used: %s",
+                page,
+                error,
+            )
+            return TrackerIssueRows(issues, from_expanded_api=True, complete=False)
+
+        for item in page_items:
+            key = (item["cve"], item["code"], item["status"])
+            if key in seen:
+                continue
+            seen.add(key)
+            issues.append(item)
+            found_cves.add(item["cve"])
+
+        if requested_cves <= found_cves:
+            return TrackerIssueRows(issues, from_expanded_api=True, complete=True)
+        if not payload.get("next"):
+            return TrackerIssueRows(issues, from_expanded_api=True, complete=True)
+        page += 1
+        payload = None
+
+    LOG.warning(
+        "Stopped Nixpkgs security tracker pagination after %s pages",
+        page_limit,
+    )
+    return TrackerIssueRows(issues, from_expanded_api=True, complete=False)
+
+
 def _default_fetcher(cves, *, session=None, timeout=REQUEST_TIMEOUT):
     """Query the tracker issues API for a batch of CVE IDs."""
     cves = [str(cve).strip() for cve in cves if is_cve_id(cve)]
@@ -106,14 +238,16 @@ def _default_fetcher(cves, *, session=None, timeout=REQUEST_TIMEOUT):
     try:
         resp = session.get(
             TRACKER_ISSUES_URL,
-            params={"cve": ",".join(cves)},
+            params={"cve": ",".join(cves), "expand": "suggestions"},
             timeout=timeout,
         )
         resp.raise_for_status()
         payload = resp.json()
-        if not isinstance(payload, list):
-            raise ValueError("tracker issues API returned a non-list payload")
-        return [item for item in payload if isinstance(item, dict)]
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        return _fetch_expanded_issue_pages(
+            cves, session=session, timeout=timeout, first_payload=payload
+        )
     finally:
         if owns_session and hasattr(session, "close"):
             session.close()
@@ -212,6 +346,8 @@ def _fetch_validated_issues(fetcher, chunk, session, detail_fetcher=None):
     raw_issues = _call_fetcher(fetcher, chunk, session)
     issues_by_cve, _ = _collect_validated_issues(raw_issues, requested)
     missing_cves = requested - set(issues_by_cve)
+    if getattr(raw_issues, "from_expanded_api", False):
+        return issues_by_cve, getattr(raw_issues, "complete", True)
     if detail_fetcher is None or not missing_cves:
         return issues_by_cve, True
 

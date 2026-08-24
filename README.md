@@ -152,6 +152,11 @@ fresh state for the next run. It persists:
   `nixtracker` lookups
 - the previous-run findings baseline used for "since last run" sections
 
+With `nixtracker` enabled, the first uncached tracker lookup may walk the
+tracker's full paginated issue list and take several minutes. The shared
+`sbomnix` HTTP cache keeps those responses for 6 hours and reuses them across
+CVE chunks.
+
 After cache restore and before the target scan, the action runs a best-effort
 `vulnix` preflight against a small `nixpkgs#hello` derivation when existing
 cache state is present. A cold cache skips the preflight and is initialized by

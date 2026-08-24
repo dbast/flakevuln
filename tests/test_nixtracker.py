@@ -278,24 +278,334 @@ def test_default_fetcher_uses_tracker_query_params_and_timeout():
 
     assert payload[0]["code"] == "NIXPKGS-2026-2319"
     assert captured["url"] == nixtracker.TRACKER_ISSUES_URL
-    assert captured["params"] == {"cve": "CVE-2026-65975"}
+    assert captured["params"] == {
+        "cve": "CVE-2026-65975",
+        "expand": "suggestions",
+    }
     assert captured["timeout"] == nixtracker.REQUEST_TIMEOUT
 
 
-def test_default_fetcher_rejects_non_list_payload():
+def test_default_fetcher_supports_paginated_issue_api():
+    calls = []
+
     class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
         def json(self):
-            return {"code": "NIXPKGS-2026-2319"}
+            return self.payload
 
         def raise_for_status(self):
             return None
 
     class FakeSession:
         def get(self, url, params, timeout):
+            calls.append((url, dict(params), timeout))
+            if params == {
+                "cve": "CVE-2026-70461,CVE-2026-53793",
+                "expand": "suggestions",
+            }:
+                return FakeResponse(
+                    {
+                        "count": 2,
+                        "next": "page 2",
+                        "results": [
+                            {
+                                "code": "NIXPKGS-2026-2441",
+                                "status": "A",
+                                "suggestions": [
+                                    {
+                                        "cve_id": "CVE-2026-53793",
+                                        "issue_code": "NIXPKGS-2026-2441",
+                                        "status": "published",
+                                    },
+                                    {
+                                        "cve_id": "CVE-2026-99999",
+                                        "issue_code": "NIXPKGS-2026-2441",
+                                        "status": "published",
+                                    },
+                                ],
+                            }
+                        ],
+                    }
+                )
+            if params == {"expand": "suggestions", "page": "2"}:
+                return FakeResponse(
+                    {
+                        "next": None,
+                        "results": [
+                            {
+                                "code": "NIXPKGS-2026-2440",
+                                "status": "A",
+                                "suggestions": [
+                                    {
+                                        "cve_id": "CVE-2026-70461",
+                                        "issue_code": "NIXPKGS-2026-2440",
+                                        "status": "published",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                )
+            raise AssertionError(f"unexpected params: {params}")
+
+    payload = nixtracker._default_fetcher(
+        ["CVE-2026-70461", "CVE-2026-53793"], session=FakeSession()
+    )
+
+    assert payload == [
+        {
+            "cve": "CVE-2026-53793",
+            "code": "NIXPKGS-2026-2441",
+            "status": "affected",
+        },
+        {
+            "cve": "CVE-2026-70461",
+            "code": "NIXPKGS-2026-2440",
+            "status": "affected",
+        },
+    ]
+    assert calls == [
+        (
+            nixtracker.TRACKER_ISSUES_URL,
+            {
+                "cve": "CVE-2026-70461,CVE-2026-53793",
+                "expand": "suggestions",
+            },
+            nixtracker.REQUEST_TIMEOUT,
+        ),
+        (
+            nixtracker.TRACKER_ISSUES_URL,
+            {"expand": "suggestions", "page": "2"},
+            nixtracker.REQUEST_TIMEOUT,
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"code": "NIXPKGS-2026-2319"},
+        {"results": {}},
+        "not a paginated response",
+    ],
+)
+def test_default_fetcher_marks_unusable_first_paginated_page_incomplete(
+    payload, caplog
+):
+    class FakeResponse:
+        def json(self):
+            return payload
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, params, timeout):
+            assert url == nixtracker.TRACKER_ISSUES_URL
+            assert params == {
+                "cve": "CVE-2026-65975",
+                "expand": "suggestions",
+            }
+            assert timeout == nixtracker.REQUEST_TIMEOUT
             return FakeResponse()
 
-    with pytest.raises(ValueError, match="non-list"):
-        nixtracker._default_fetcher(["CVE-2026-65975"], session=FakeSession())
+    with caplog.at_level("WARNING"):
+        rows = nixtracker._default_fetcher(["CVE-2026-65975"], session=FakeSession())
+
+    assert rows == []
+    assert rows.from_expanded_api is True
+    assert rows.complete is False
+    assert "Nixpkgs security tracker page 1 could not be used" in caplog.text
+
+
+def test_default_fetcher_derives_paginated_issue_pages_from_count(monkeypatch):
+    monkeypatch.setattr(nixtracker, "TRACKER_ISSUE_PAGE_LIMIT", 50)
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, params, timeout):
+            calls.append((url, dict(params), timeout))
+            page = int(params.get("page", "1"))
+            if page == 1:
+                return FakeResponse(
+                    {
+                        "count": 40,
+                        "next": "page 2",
+                        "results": [
+                            {
+                                "code": "NIXPKGS-2026-0001",
+                                "status": "A",
+                                "suggestions": [{"cve_id": "CVE-2026-00001"}],
+                            }
+                        ],
+                    }
+                )
+            if page < 40:
+                return FakeResponse(
+                    {
+                        "next": f"page {page + 1}",
+                        "results": [
+                            {
+                                "code": f"NIXPKGS-2026-{page:04d}",
+                                "status": "A",
+                                "suggestions": [{"cve_id": f"CVE-2026-{page:05d}"}],
+                            }
+                        ],
+                    }
+                )
+            if page == 40:
+                return FakeResponse(
+                    {
+                        "next": None,
+                        "results": [
+                            {
+                                "code": "NIXPKGS-2026-0040",
+                                "status": "A",
+                                "suggestions": [
+                                    {
+                                        "cve_id": "CVE-2026-49119",
+                                        "issue_code": "NIXPKGS-2026-0040",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                )
+            raise AssertionError(f"unexpected page: {page}")
+
+    payload = nixtracker._default_fetcher(["CVE-2026-49119"], session=FakeSession())
+
+    assert payload == [
+        {
+            "cve": "CVE-2026-49119",
+            "code": "NIXPKGS-2026-0040",
+            "status": "affected",
+        }
+    ]
+    assert len(calls) == 40
+    assert calls[0][1] == {"cve": "CVE-2026-49119", "expand": "suggestions"}
+    assert calls[-1][1] == {"expand": "suggestions", "page": "40"}
+
+
+def test_enrich_caps_paginated_issue_api_for_missing_cves(monkeypatch, caplog):
+    monkeypatch.setattr(nixtracker, "TRACKER_ISSUE_PAGE_LIMIT", 2)
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        headers = {}
+
+        def get(self, url, params, timeout):
+            calls.append((url, dict(params), timeout))
+            if params in (
+                {"cve": "CVE-2026-99999", "expand": "suggestions"},
+                {"expand": "suggestions", "page": "2"},
+            ):
+                return FakeResponse({"next": "more", "results": []})
+            raise AssertionError(f"unexpected params: {params}")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(nixtracker, "_create_tracker_session", FakeSession)
+    findings = [{"vuln_id": "CVE-2026-99999"}]
+
+    with caplog.at_level("WARNING"):
+        ok = nixtracker.enrich_actionable(findings)
+
+    assert ok is False
+    assert "nixpkgs_issue" not in findings[0]
+    assert calls == [
+        (
+            nixtracker.TRACKER_ISSUES_URL,
+            {"cve": "CVE-2026-99999", "expand": "suggestions"},
+            nixtracker.REQUEST_TIMEOUT,
+        ),
+        (
+            nixtracker.TRACKER_ISSUES_URL,
+            {"expand": "suggestions", "page": "2"},
+            nixtracker.REQUEST_TIMEOUT,
+        ),
+    ]
+    assert "Stopped Nixpkgs security tracker pagination after 2 pages" in caplog.text
+
+
+def test_enrich_preserves_partial_rows_when_paginated_page_is_malformed(
+    monkeypatch, caplog
+):
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        headers = {}
+
+        def get(self, url, params, timeout):
+            if params == {
+                "cve": "CVE-2026-53793,CVE-2026-70461",
+                "expand": "suggestions",
+            }:
+                return FakeResponse(
+                    {
+                        "count": 2,
+                        "next": "page 2",
+                        "results": [
+                            {
+                                "code": "NIXPKGS-2026-2441",
+                                "status": "A",
+                                "suggestions": [{"cve_id": "CVE-2026-53793"}],
+                            }
+                        ],
+                    }
+                )
+            if params == {"expand": "suggestions", "page": "2"}:
+                return FakeResponse({"code": "NIXPKGS-2026-2319"})
+            raise AssertionError(f"unexpected params: {params}")
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(nixtracker, "_create_tracker_session", FakeSession)
+    findings = [
+        {"vuln_id": "CVE-2026-53793"},
+        {"vuln_id": "CVE-2026-70461"},
+    ]
+
+    with caplog.at_level("WARNING"):
+        ok = nixtracker.enrich_actionable(findings)
+
+    assert ok is False
+    assert findings[0]["nixpkgs_issue"] == "NIXPKGS-2026-2441"
+    assert findings[0]["nixpkgs_issue_status"] == "affected"
+    assert "nixpkgs_issue" not in findings[1]
+    assert "Nixpkgs security tracker page 2 could not be used" in caplog.text
 
 
 def test_default_detail_fetcher_extracts_cves_from_tracker_issue_page():
