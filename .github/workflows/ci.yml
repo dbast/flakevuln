@@ -16,9 +16,8 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Install Nix
-        uses: cachix/install-nix-action@9280e7aca88deada44c930f1e2c78e21c3ae3edd # v31
+        uses: cachix/install-nix-action@9280e7aca88deada44c930f1e2c78e21c3ae3edd # v31.7.0
         with:
-          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
           extra_nix_config: |
             experimental-features = nix-command flakes
             accept-flake-config = true
