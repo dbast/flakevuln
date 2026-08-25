@@ -13,6 +13,30 @@ Short list of follow-up work.
   same mirror through its target scan. The preflight and scan must use one data
   source, and the persisted cache key should include that source, rather than a
   preflight-only override mixing mirror data with the scan's default NVD data.
+- Consider content-addressed cache keys for the `grype` database if per-repo
+  cache quota becomes a problem. Every run stores a near-identical ~341 MB
+  copy, holding 5.00 GB of the default 10 GB repository limit across 15 runs of
+  the dogfood scan. A calendar-based key is the obvious fix and is wrong. It
+  assumes the database changes at most once per UTC day and always before that
+  day's first run, but Anchore publishes on its own cadence, independent of
+  whatever schedule a caller picks. When a publication lands after the day's
+  first run, that run has already frozen the older database under the day's
+  key, leaving it up to a day stale. The staleness alone would be harmless,
+  since the update step always re-checks upstream, but cache entries are
+  immutable, so every later run that day would download the current database
+  and be unable to publish it, adding upstream traffic instead of removing it.
+  Key on the `digest` field in grype's `import.json` instead, which changes
+  exactly when the database does. Two reasons this stays low priority. The
+  limit behaves as a rolling steady state rather than a cumulative cap, since
+  entries unread for the retention period, seven days by default, are dropped,
+  so the duplicates expire on their own and the repository settles below the
+  limit rather than filling up. And the quota is per repository, so none of
+  this reduces load on shared infrastructure. That reprieve depends on staying
+  under the limit: a repository over the limit still saves the new entry, but
+  eviction is global and ordered by last access rather than scoped to the
+  redundant copies, so it can drop a baseline or tool cache that an
+  infrequently-run scope still needs, costing a "since last run" section or an
+  upstream refetch.
 - Make `nix_unstable` and `upstream` version strings in report tables link to
   the relevant upstream repo or file when that source URL is available.
 - Consider broader flake coverage for repos that do not declare a re-lockable
