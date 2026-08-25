@@ -62,6 +62,7 @@ name: flakevuln
 on:
   workflow_dispatch:
   schedule:
+    # Pick your own minute instead of copying this one. See the note below.
     - cron: "17 3 * * 1"
 
 permissions:
@@ -84,6 +85,21 @@ jobs:
           nixtracker: true
           cachix-caches: nix-community my-org
 ```
+
+Choose your own cron minute rather than reusing the one above. A scan fans out
+to shared community infrastructure, including `repology.org` and the Nixpkgs
+security tracker, and neither is a large service. Copies of the same schedule
+across many repositories concentrate that load into a single minute, so
+staggering costs you nothing and helps the services everyone depends on.
+
+None of the optional inputs above are free, and they cost in different ways.
+`nixprs` and `nixtracker` add rate-limited enrichment lookups to the report
+phase, which can dominate the total run time, and the shared HTTP cache
+holding their responses is deliberately short-lived so scheduled scans
+re-query and report current data. `unstable-ref` instead adds a third full
+scan of every target, so its cost tracks closure size rather than finding
+count. Enable each because you want what it produces, not because this
+example shows it.
 
 ### Example: scan a flake in a subdirectory
 
