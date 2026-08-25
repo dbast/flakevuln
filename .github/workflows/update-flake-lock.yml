@@ -1,0 +1,50 @@
+name: Update flake.lock
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/update-flake-lock.yml]
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/update-flake-lock.yml]
+  workflow_dispatch:
+  schedule:
+    # At 03:47 on Mondays
+    - cron: "47 3 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Update flake.lock
+        run: nix flake update
+
+      - name: Show changes
+        run: git diff
+
+      - name: Create pull request
+        if: github.ref == 'refs/heads/main'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          add-paths: flake.lock
+          branch: update-flake-lock
+          delete-branch: true
+          commit-message: "chore: update flake.lock"
+          title: "chore: update flake.lock"
+          body: |
+            Automated weekly `flake.lock` update.
+
+            Close and reopen this pull request to trigger workflow runs.
