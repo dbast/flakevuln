@@ -42,7 +42,7 @@ runs:
   steps:
     # Pin the Nix CLI version used by the action.
     - name: Install Nix
-      uses: cachix/install-nix-action@9280e7aca88deada44c930f1e2c78e21c3ae3edd # v31.7.0
+      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       with:
         extra_nix_config: |
           experimental-features = nix-command flakes
